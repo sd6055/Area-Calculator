@@ -1,0 +1,49 @@
+<!DOCTYPE html>  <!-- Tells browser this is modern HTML5, not an older version -->
+<html lang="en"> <!-- Sets page language to English (helps accessibility tools) -->
+<head>
+    <!-- METADATA: Information about the page (not displayed) -->
+    <meta charset="UTF-8">           <!-- Use UTF-8 text encoding (supports all characters) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <!-- Makes site work on mobile -->
+    
+    <!-- What appears in the browser tab -->
+    <title>Square Area Calculator</title>
+    
+    <!-- Connect our CSS file for styling -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- VISIBLE CONTENT: What users actually see -->
+    <div class="container">
+        <!-- Main page heading -->
+        <h1>Square Area Calculator</h1>
+        
+        <!-- Calculator form area -->
+        <div class="calculator">
+            <!-- 
+                INPUT: User types the side length here
+                type="number" → Shows number keyboard on mobile
+                step="any"    → Allows decimals (not just whole numbers)
+                id="side"     → Lets JavaScript find this input
+            -->
+            <input 
+                type="number" 
+                id="side" 
+                placeholder="Enter side length" 
+                step="any"
+            >
+            
+            <!-- BUTTON: User clicks to calculate -->
+            <!-- No onclick attribute here! Our script.js adds it automatically -->
+            <button>Calculate Area</button>
+            
+            <!-- RESULT: Where we display the answer -->
+            <!-- script.js will fill this with "Area: 25" or error messages -->
+            <div id="result"></div>
+        </div>
+    </div>
+    
+    <!-- Connect our JavaScript file - IMPORTANT: This goes at END of body -->
+    <!-- Why? Page loads visually first, THEN adds interactive features -->
+    <script src="script.js"></script>
+</body>
+</html>
