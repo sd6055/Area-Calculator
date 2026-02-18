@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from datetime import datetime
+from pydantic import BaseModel, field_validator
 
 # Your modules
 from calculator import calculate_square_area
@@ -42,6 +44,15 @@ class CalculationResponse(BaseModel):
     input_value: float
     result: float
     created_at: str
+    
+    # Pydantic V2 syntax
+    @field_validator('created_at', mode='before')
+    @classmethod
+    def parse_datetime(cls, value):
+        """Convert datetime to string before validation"""
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return value
     
     class Config:
         from_attributes = True
