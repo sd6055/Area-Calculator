@@ -1,54 +1,143 @@
-from fastapi import FastAPI
+"""
+main.py - The web layer connecting everything
+New: Now saves every calculation to MySQL!
+"""
+
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel  # Pydantic helps us define and validate data shapes
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from typing import List, Optional
+
+# Your existing modules
 from calculator import calculate_square_area
 
-# ============ DATA MODEL ============
-# This defines what a valid request to our API should look like
-# We're telling FastAPI: "Expect a JSON object with a 'side' field that's a float"
+# NEW: Database modules
+import models
+from database import engine, get_db
+
+# CREATE TABLES - This runs once when app starts
+# If tables don't exist in MySQL, SQLAlchemy creates them
+models.Base.metadata.create_all(bind=engine)
+
+# Initialize FastAPI
+app = FastAPI()
+
+# CORS setup (unchanged)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "null",
+    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Pydantic model for request validation
 class SquareRequest(BaseModel):
     side: float
 
-# ============ APP SETUP ============
-# Create the FastAPI application instance
-app = FastAPI()
+# Pydantic model for response (includes database fields)
+class CalculationResponse(BaseModel):
+    id: int
+    shape: str
+    input_value: float
+    result: float
+    created_at: str
+    
+    class Config:
+        from_attributes = True  # Tells Pydantic to work with SQLAlchemy models
 
-# ============ CORS CONFIGURATION ============
-# CORS = Cross-Origin Resource Sharing
-# This controls which websites can talk to our API
-app.add_middleware(
-    CORSMiddleware,
-    # Only allow these specific addresses to access our API
-    allow_origins=[
-        "http://127.0.0.1:8000",  # Our backend itself
-        "http://localhost:8000",   # Same backend, different name
-        "null",                    # Allows opening HTML directly from file://
-    ],
-    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, etc.)
-    allow_headers=["*"],  # Allow all HTTP headers
-)
-
-# ============ API ENDPOINTS ============
-
-# Endpoint: POST /api/area/square
-# Calculates the area of a square given a side length
-# Now expects: {"side": 5} instead of just 5
 @app.post("/api/area/square")
-async def area_square(request: SquareRequest):  # FastAPI automatically parses the JSON into our SquareRequest object
-    # SECURITY: Never trust user input!
-    # Validate that side is positive
+async def area_square(
+    request: SquareRequest, 
+    db: Session = Depends(get_db)  # Get database connection
+):
+    """
+    Calculate square area AND save to database
+    """
+    # 1. VALIDATION (unchanged)
     if request.side <= 0:
         return {"error": "Side length must be positive"}
-    
-    # Validate that side isn't ridiculously large
     if request.side > 1000000:
         return {"error": "Value too large - maximum is 1,000,000"}
     
-    # If validation passes, do the actual calculation
-    area = calculate_square_area(request.side)  # Access the side value with request.side
-    return {"area": area}
+    # 2. CALCULATION (unchanged)
+    area = calculate_square_area(request.side)
+    
+    # 3. SAVE TO DATABASE ✨ NEW!
+    # Create a new Calculation object
+    db_calculation = models.Calculation(
+        shape="square",
+        input_value=request.side,
+        result=area
+    )
+    
+    # Add to database session
+    db.add(db_calculation)
+    
+    # Commit transaction (permanently save)
+    db.commit()
+    
+    # Refresh to get auto-generated ID and timestamp
+    db.refresh(db_calculation)
+    
+    # 4. RETURN result with database info
+    return {
+        "area": area,
+        "calculation_id": db_calculation.id,
+        "timestamp": db_calculation.created_at.isoformat() if db_calculation.created_at else None
+    }
 
-# Simple test endpoint to verify the API is running
+@app.get("/api/calculations", response_model=List[CalculationResponse])
+async def get_all_calculations(
+    skip: int = 0,  # How many records to skip (for pagination)
+    limit: int = 10,  # How many records to return
+    db: Session = Depends(get_db)
+):
+    """
+    Get all calculations, newest first
+    """
+    calculations = db.query(models.Calculation)\
+        .order_by(models.Calculation.created_at.desc())\
+        .offset(skip)\
+        .limit(limit)\
+        .all()
+    return calculations
+
+@app.get("/api/calculations/{calculation_id}", response_model=CalculationResponse)
+async def get_calculation_by_id(
+    calculation_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a specific calculation by its ID
+    """
+    calculation = db.query(models.Calculation)\
+        .filter(models.Calculation.id == calculation_id)\
+        .first()
+    
+    if not calculation:
+        raise HTTPException(status_code=404, detail="Calculation not found")
+    
+    return calculation
+
+@app.get("/api/calculations/shape/{shape}", response_model=List[CalculationResponse])
+async def get_calculations_by_shape(
+    shape: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all calculations for a specific shape
+    """
+    calculations = db.query(models.Calculation)\
+        .filter(models.Calculation.shape == shape)\
+        .order_by(models.Calculation.created_at.desc())\
+        .all()
+    return calculations
+
 @app.get("/")
 async def root():
-    return {"message": "API is running"}
+    return {"message": "Polygon Calculator API with MySQL is running!"}
