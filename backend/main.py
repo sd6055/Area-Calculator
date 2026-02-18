@@ -1,6 +1,6 @@
 """
-main.py - The web layer connecting everything
-New: Now saves every calculation to MySQL!
+main.py - The web layer
+Now using crud.py for all database operations
 """
 
 from fastapi import FastAPI, Depends, HTTPException
@@ -9,18 +9,15 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
-# Your existing modules
+# Your modules
 from calculator import calculate_square_area
-
-# NEW: Database modules
 import models
+import crud  # NEW: Import our CRUD operations
 from database import engine, get_db
 
-# CREATE TABLES - This runs once when app starts
-# If tables don't exist in MySQL, SQLAlchemy creates them
+# Create tables
 models.Base.metadata.create_all(bind=engine)
 
-# Initialize FastAPI
 app = FastAPI()
 
 # CORS setup (unchanged)
@@ -35,11 +32,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Pydantic model for request validation
+# Pydantic models
 class SquareRequest(BaseModel):
     side: float
 
-# Pydantic model for response (includes database fields)
 class CalculationResponse(BaseModel):
     id: int
     shape: str
@@ -48,43 +44,31 @@ class CalculationResponse(BaseModel):
     created_at: str
     
     class Config:
-        from_attributes = True  # Tells Pydantic to work with SQLAlchemy models
+        from_attributes = True
 
 @app.post("/api/area/square")
 async def area_square(
     request: SquareRequest, 
-    db: Session = Depends(get_db)  # Get database connection
+    db: Session = Depends(get_db)
 ):
-    """
-    Calculate square area AND save to database
-    """
-    # 1. VALIDATION (unchanged)
+    """Calculate square area AND save to database"""
+    # Validation
     if request.side <= 0:
         return {"error": "Side length must be positive"}
     if request.side > 1000000:
         return {"error": "Value too large - maximum is 1,000,000"}
     
-    # 2. CALCULATION (unchanged)
+    # Calculate
     area = calculate_square_area(request.side)
     
-    # 3. SAVE TO DATABASE ✨ NEW!
-    # Create a new Calculation object
-    db_calculation = models.Calculation(
+    # SAVE TO DATABASE using crud.py ✨
+    db_calculation = crud.create_calculation(
+        db=db,
         shape="square",
         input_value=request.side,
         result=area
     )
     
-    # Add to database session
-    db.add(db_calculation)
-    
-    # Commit transaction (permanently save)
-    db.commit()
-    
-    # Refresh to get auto-generated ID and timestamp
-    db.refresh(db_calculation)
-    
-    # 4. RETURN result with database info
     return {
         "area": area,
         "calculation_id": db_calculation.id,
@@ -93,18 +77,21 @@ async def area_square(
 
 @app.get("/api/calculations", response_model=List[CalculationResponse])
 async def get_all_calculations(
-    skip: int = 0,  # How many records to skip (for pagination)
-    limit: int = 10,  # How many records to return
+    skip: int = 0, 
+    limit: int = 10, 
     db: Session = Depends(get_db)
 ):
-    """
-    Get all calculations, newest first
-    """
-    calculations = db.query(models.Calculation)\
-        .order_by(models.Calculation.created_at.desc())\
-        .offset(skip)\
-        .limit(limit)\
-        .all()
+    """Get all calculations using crud.py"""
+    calculations = crud.get_all_calculations(db, skip=skip, limit=limit)
+    return calculations
+
+@app.get("/api/calculations/recent", response_model=List[CalculationResponse])
+async def get_recent_calculations(
+    limit: int = 5,
+    db: Session = Depends(get_db)
+):
+    """Get most recent calculations using crud.py"""
+    calculations = crud.get_recent_calculations(db, limit=limit)
     return calculations
 
 @app.get("/api/calculations/{calculation_id}", response_model=CalculationResponse)
@@ -112,16 +99,10 @@ async def get_calculation_by_id(
     calculation_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Get a specific calculation by its ID
-    """
-    calculation = db.query(models.Calculation)\
-        .filter(models.Calculation.id == calculation_id)\
-        .first()
-    
+    """Get specific calculation using crud.py"""
+    calculation = crud.get_calculation(db, calculation_id)
     if not calculation:
         raise HTTPException(status_code=404, detail="Calculation not found")
-    
     return calculation
 
 @app.get("/api/calculations/shape/{shape}", response_model=List[CalculationResponse])
@@ -129,15 +110,30 @@ async def get_calculations_by_shape(
     shape: str,
     db: Session = Depends(get_db)
 ):
-    """
-    Get all calculations for a specific shape
-    """
-    calculations = db.query(models.Calculation)\
-        .filter(models.Calculation.shape == shape)\
-        .order_by(models.Calculation.created_at.desc())\
-        .all()
+    """Get calculations for a shape using crud.py"""
+    calculations = crud.get_calculations_by_shape(db, shape)
     return calculations
+
+@app.get("/api/stats/count")
+async def get_calculation_count(
+    shape: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Get count of calculations, optionally by shape"""
+    count = crud.count_calculations(db, shape)
+    return {"count": count}
+
+@app.delete("/api/calculations/{calculation_id}")
+async def delete_calculation(
+    calculation_id: int,
+    db: Session = Depends(get_db)
+):
+    """Delete a specific calculation"""
+    deleted = crud.delete_calculation(db, calculation_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Calculation not found")
+    return {"message": f"Calculation {calculation_id} deleted"}
 
 @app.get("/")
 async def root():
-    return {"message": "Polygon Calculator API with MySQL is running!"}
+    return {"message": "Polygon Calculator API with MySQL and CRUD operations!"}
