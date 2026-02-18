@@ -113,3 +113,39 @@ document.addEventListener('DOMContentLoaded', function() {
     // Optional: Refresh history every 30 seconds
     setInterval(loadHistory, 30000);
 });
+
+// Add to script.js - get calculation statistics
+async function loadStats() {
+    try {
+        const response = await fetch(`${API_URL}/api/stats/count`);
+        const stats = await response.json();
+        
+        let statsElement = document.getElementById('stats');
+        if (!statsElement) {
+            statsElement = document.createElement('div');
+            statsElement.id = 'stats';
+            statsElement.innerHTML = '<h3>Statistics:</h3>';
+            
+            const historyElement = document.getElementById('history');
+            historyElement.parentNode.insertBefore(statsElement, historyElement);
+        }
+        
+        statsElement.innerHTML = `
+            <h3>Statistics:</h3>
+            <p>Total calculations: ${stats.count}</p>
+        `;
+    } catch (error) {
+        console.error('Failed to load stats:', error);
+    }
+}
+
+// Update your DOMContentLoaded to also load stats
+document.addEventListener('DOMContentLoaded', function() {
+    const button = document.querySelector('button');
+    if (button) {
+        button.addEventListener('click', calculateArea);
+    }
+    
+    loadHistory();
+    loadStats();  // NEW: Load stats on page load
+});
